@@ -1,5 +1,6 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/components/layout/MainLayout'
+import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import UsersPage from '@/pages/UsersPage'
 import FoodPage from '@/pages/FoodPage'
@@ -16,29 +17,135 @@ import AnalyticsPage from '@/pages/AnalyticsPage'
 import SettingsPage from '@/pages/SettingsPage'
 import LogsPage from '@/pages/LogsPage'
 import MonitoringPage from '@/pages/MonitoringPage'
+import { getAccessToken } from '@/lib/auth'
+
+// Protected Route wrapper
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = getAccessToken()
+  return token ? <>{children}</> : <Navigate to="/login" replace />
+}
 
 function App() {
   return (
     <Router>
-      <MainLayout>
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="/food" element={<FoodPage />} />
-          <Route path="/travel" element={<TravelPage />} />
-          <Route path="/tickets" element={<TicketsPage />} />
-          <Route path="/shopping" element={<ShoppingPage />} />
-          <Route path="/riders" element={<RidersPage />} />
-          <Route path="/vendors" element={<VendorsPage />} />
-          <Route path="/operations" element={<OperationsPage />} />
-          <Route path="/finance" element={<FinancePage />} />
-          <Route path="/cms" element={<CMSPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/logs" element={<LogsPage />} />
-        </Routes>
-      </MainLayout>
+      <Routes>
+        {/* Public Route */}
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* Protected Routes */}
+        <Route path="/" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <DashboardPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <DashboardPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/users" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <UsersPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/food" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <FoodPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/travel" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <TravelPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/tickets" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <TicketsPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/shopping" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <ShoppingPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/riders" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <RidersPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/vendors" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <VendorsPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/operations" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <OperationsPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/finance" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <FinancePage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/cms" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <CMSPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/notifications" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <NotificationsPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/analytics" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <AnalyticsPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/settings" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <SettingsPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/logs" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LogsPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+      </Routes>
     </Router>
   )
 }

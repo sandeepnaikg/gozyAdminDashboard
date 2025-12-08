@@ -1,0 +1,68 @@
+version: '3.6'
+
+services:
+  # PostgreSQL Database (if you don't have one already)
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admingozy123}
+      POSTGRES_DB: ${POSTGRES_DB:-gozy_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - hasura-network
+
+  # Hasura GraphQL Engine
+  graphql-engine:
+    image: hasura/graphql-engine:v2.36.0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    restart: always
+    environment:
+      # Database URL - Update this with your actual database credentials
+      HASURA_GRAPHQL_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-admingozy123}@postgres:5432/${POSTGRES_DB:-gozy_platform}
+      
+      # Enable the Hasura Console (set to "false" in production)
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      
+      # Admin Secret - CHANGE THIS TO A SECURE SECRET
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_GRAPHQL_ADMIN_SECRET:-your-secret-admin-key-change-this}
+      
+      # JWT Secret for Authentication
+      HASURA_GRAPHQL_JWT_SECRET: '{"type":"HS256", "key":"${JWT_SECRET:-your-super-secret-jwt-key-change-this-to-minimum-32-characters}"}'
+      
+      # Unauthorized role (for public access if needed)
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: anonymous
+      
+      # Enable CORS (adjust in production)
+      HASURA_GRAPHQL_CORS_DOMAIN: "*"
+      
+      # Enable dev mode (set to "false" in production)
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      
+      # Enable console assets on server
+      HASURA_GRAPHQL_ENABLE_CONSOLE_ASSETS: "true"
+      
+      # Log level
+      HASURA_GRAPHQL_LOG_LEVEL: info
+      
+      # Enable remote schema permissions
+      HASURA_GRAPHQL_ENABLE_REMOTE_SCHEMA_PERMISSIONS: "true"
+      
+      # Metadata database (optional, uses same DB if not specified)
+      # HASURA_GRAPHQL_METADATA_DATABASE_URL: postgresql://postgres:admingozy123@postgres:5432/gozy_platform
+    networks:
+      - hasura-network
+
+volumes:
+  postgres_data:
+
+networks:
+  hasura-network:
+    driver: bridge
