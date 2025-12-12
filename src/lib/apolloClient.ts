@@ -29,27 +29,52 @@ interface GraphQLRequest {
 export async function graphqlRequest<T = any>(
   request: GraphQLRequest
 ): Promise<GraphQLResponse<T>> {
-  const token = localStorage.getItem('authToken');
-  const role = localStorage.getItem('userRole') || 'admin';
-  const vendorId = localStorage.getItem('vendorAccountId');
+  // Get user context directly from localStorage to avoid circular dependencies
+  const getUserContext = () => {
+    try {
+      const context = localStorage.getItem('user_context');
+      return context ? JSON.parse(context) : null;
+    } catch {
+      return null;
+    }
+  };
+  
+  const token = localStorage.getItem('access_token');
+  const userContext = getUserContext();
+  const role = userContext?.role || 'admin';
+  const vendorId = userContext?.vendorId || userContext?.providerId;
+  const userId = userContext?.userId;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  // For development: Use admin secret
-  // For production: Use JWT token
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  } else if (ADMIN_SECRET) {
+  // For development: Always use admin secret + role headers for row-level security
+  // Hasura requires admin secret to accept x-hasura-* headers in dev mode
+  // For production: Replace with JWT token
+  if (ADMIN_SECRET) {
     headers['x-hasura-admin-secret'] = ADMIN_SECRET;
+  } else if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Set Hasura role headers
+  // Set Hasura custom claims for row-level security
   headers['x-hasura-role'] = role;
+  if (userId) {
+    headers['x-hasura-user-id'] = userId;
+  }
   if (vendorId) {
     headers['x-hasura-vendor-id'] = vendorId;
   }
+
+  // Debug logging
+  console.log('🔐 Hasura Request:', { 
+    role, 
+    userId: userId ? 'set' : 'none', 
+    vendorId: vendorId || 'none',
+    usingAdminSecret: ADMIN_SECRET ? 'YES (dev mode)' : 'NO'
+  });
+  console.log('📋 Headers:', { role, hasAdminSecret: !!ADMIN_SECRET, hasVendorId: !!vendorId });
 
   try {
     const response = await fetch(GRAPHQL_ENDPOINT, {
@@ -67,6 +92,8 @@ export async function graphqlRequest<T = any>(
     // Handle GraphQL errors
     if (result.errors) {
       console.error('[GraphQL Errors]:', result.errors);
+      console.error('[Full Error Details]:', JSON.stringify(result.errors, null, 2));
+      console.error('[Request]:', JSON.stringify(request).substring(0, 500));
       
       // Handle authentication errors
       if (result.errors.some(err => err.extensions?.code === 'UNAUTHENTICATED')) {

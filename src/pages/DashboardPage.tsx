@@ -5,100 +5,90 @@ import { LiveOrdersFeed } from '@/components/dashboard/LiveOrdersFeed'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { useState, useEffect } from 'react'
-
-const GRAPHQL_URL = "https://db.gozy.online/v1/graphql";
-const AUTH_TOKEN = import.meta.env.VITE_HASURA_ADMIN_SECRET;
-
-const query = `
-query GetDashboardStats {
-  users_aggregate {
-    aggregate {
-      count
-    }
-  }
-
-  bookings_aggregate(where: { payment_status: { _eq: "completed" } }) {
-    aggregate {
-      count
-      sum {
-        total_amount
-      }
-    }
-  }
-
-  active_bookings: bookings_aggregate(
-    where: { booking_status: { _in: ["pending", "confirmed"] } }
-  ) {
-    aggregate { count }
-  }
-
-  food_bookings: bookings_aggregate(where: { service_type: { _eq: "food" } }) {
-    aggregate { count }
-  }
-
-  travel_bookings: bookings_aggregate(
-    where: { service_type: { _in: ["flight", "hotel", "train"] } }
-  ) {
-    aggregate { count }
-  }
-
-  shopping_bookings: bookings_aggregate(where: { service_type: { _eq: "delivery" } }) {
-    aggregate { count }
-  }
-
-  tickets_bookings: bookings_aggregate(
-    where: { service_type: { _in: ["movie", "metro"] } }
-  ) {
-    aggregate { count }
-  }
-
-  recent_bookings: bookings(
-    order_by: { booked_at: desc }
-    limit: 20
-  ) {
-    id
-    user_id
-    service_type
-    total_amount
-    booking_status
-    payment_status
-    booked_at
-  }
-}
-`;
-
-async function getDashboardStats() {
-  const res = await fetch(GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: AUTH_TOKEN,
-    },
-    body: JSON.stringify({ query }),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`GraphQL error: ${res.status} ${txt}`);
-  }
-  const { data, errors } = await res.json();
-  if (errors) throw new Error(JSON.stringify(errors));
-  return data;
-}
+import { graphqlRequest } from '@/lib/apolloClient'
+import { 
+  GET_DASHBOARD_STATS, GET_DASHBOARD_STATS_ADMIN,
+  GET_MODULE_USAGE, GET_MODULE_USAGE_ADMIN,
+  GET_RECENT_BOOKINGS, GET_RECENT_BOOKINGS_ADMIN,
+  GET_SERVICE_DISTRIBUTION 
+} from '@/graphql/queries/realDashboard'
+import type { UserContext } from '@/lib/auth'
 
 export default function DashboardPage() {
   const [dateRange, setDateRange] = useState('7days');
-  const [dataDashboard, setDataDashboard] = useState<any>(null);
+  const [statsData, setStatsData] = useState<any>(null);
+  const [moduleData, setModuleData] = useState<any>(null);
+  const [bookingsData, setBookingsData] = useState<any>(null);
+  const [distributionData, setDistributionData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  
+  // Get vendor context for filtering
+  const getUserContext = (): UserContext | null => {
+    try {
+      const context = localStorage.getItem('user_context');
+      return context ? JSON.parse(context) : null;
+    } catch {
+      return null;
+    }
+  };
+  
+  const userContext = getUserContext();
+  const userRole = userContext?.role || 'admin';
+  const vendorId = userContext?.vendorId || userContext?.providerId || null;
+  const isVendor = userRole === 'vendor';
 
+  // Log for debugging
+  console.log('🔍 Dashboard Context:', { userRole, vendorId, isVendor });
+
+  // Fetch real data from database
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getDashboardStats();
-      setDataDashboard(data);
+
+      // Use different queries based on role
+      let stats, modules, bookings;
+
+      if (isVendor) {
+        // Vendor-specific queries (Hasura RLS filters automatically via x-hasura-vendor-id header)
+        console.log('📊 Using VENDOR queries (no variables needed - filtered by Hasura RLS)');
+        [stats, modules, bookings] = await Promise.all([
+          graphqlRequest({ query: GET_DASHBOARD_STATS }),
+          graphqlRequest({ query: GET_MODULE_USAGE }),
+          graphqlRequest({ query: GET_RECENT_BOOKINGS, variables: { limit: 10 } }),
+        ]);
+        
+        // Vendor doesn't fetch distribution (will calculate from bookings)
+        if (stats.errors) throw new Error(stats.errors[0]?.message || 'Failed to fetch stats');
+        if (modules.errors) throw new Error(modules.errors[0]?.message || 'Failed to fetch module data');
+        if (bookings.errors) throw new Error(bookings.errors[0]?.message || 'Failed to fetch bookings');
+        
+      } else {
+        // Admin queries (no filtering)
+        console.log('📊 Using ADMIN queries');
+        [stats, modules, bookings] = await Promise.all([
+          graphqlRequest({ query: GET_DASHBOARD_STATS_ADMIN }),
+          graphqlRequest({ query: GET_MODULE_USAGE_ADMIN }),
+          graphqlRequest({ query: GET_RECENT_BOOKINGS_ADMIN, variables: { limit: 10 } }),
+        ]);
+        
+        // Admin fetches distribution
+        const distribution = await graphqlRequest({ query: GET_SERVICE_DISTRIBUTION });
+        
+        if (stats.errors) throw new Error(stats.errors[0]?.message || 'Failed to fetch stats');
+        if (modules.errors) throw new Error(modules.errors[0]?.message || 'Failed to fetch module data');
+        if (bookings.errors) throw new Error(bookings.errors[0]?.message || 'Failed to fetch bookings');
+        if (distribution.errors) throw new Error(distribution.errors[0]?.message || 'Failed to fetch distribution');
+        
+        setDistributionData(distribution.data);
+      }
+
+      setStatsData(stats.data);
+      setModuleData(modules.data);
+      setBookingsData(bookings.data);
     } catch (err) {
+      console.error('Dashboard data fetch error:', err);
       setError(err as Error);
     } finally {
       setLoading(false);
@@ -109,46 +99,120 @@ export default function DashboardPage() {
     fetchData();
   }, [dateRange]);
 
-  // Extract data from backend response
+  // Process real data from queries
+  let totalUsers, totalOrders, totalRevenue, activeSessions;
+  let userGrowth, orderGrowth, revenueGrowth, sessionGrowth;
+  let foodTotal, travelTotal, shoppingTotal, ticketTotal;
+
+  if (isVendor) {
+    // VENDOR: Calculate aggregates manually from bookings array
+    const allBookings = statsData?.bookings ?? [];
+    
+    totalOrders = allBookings.length;
+    totalRevenue = allBookings.reduce((sum: number, b: any) => sum + (b.total_amount || 0), 0);
+    
+    // Count unique customers
+    const uniqueUserIds = new Set(allBookings.map((b: any) => b.user_id));
+    totalUsers = uniqueUserIds.size;
+    activeSessions = totalOrders; // Use booking count as proxy
+    
+    // Calculate growth (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const recentBookings = allBookings.filter((b: any) => 
+      new Date(b.booked_at) >= sevenDaysAgo
+    );
+    const recentUserIds = new Set(recentBookings.map((b: any) => b.user_id));
+    
+    userGrowth = totalUsers > 0 ? ((recentUserIds.size / totalUsers) * 100) : 0;
+    orderGrowth = totalOrders > 0 ? ((recentBookings.length / totalOrders) * 100) : 0;
+    
+    const recentRevenue = recentBookings.reduce((sum: number, b: any) => sum + (b.total_amount || 0), 0);
+    revenueGrowth = totalRevenue > 0 ? ((recentRevenue / totalRevenue) * 100) : 0;
+    sessionGrowth = userGrowth;
+    
+    // Module usage: count by service_type from moduleData
+    const moduleBookings = moduleData?.bookings ?? [];
+    const serviceCounts = moduleBookings.reduce((acc: any, b: any) => {
+      acc[b.service_type] = (acc[b.service_type] || 0) + 1;
+      return acc;
+    }, {});
+    
+    foodTotal = serviceCounts['food'] || 0;
+    travelTotal = (serviceCounts['flight'] || 0) + 
+                  (serviceCounts['hotel'] || 0) + 
+                  (serviceCounts['train'] || 0) + 
+                  (serviceCounts['metro'] || 0);
+    shoppingTotal = serviceCounts['delivery'] || 0;
+    ticketTotal = serviceCounts['movie'] || 0;
+    
+  } else {
+    // ADMIN: Use aggregate queries
+    totalUsers = statsData?.users_aggregate?.aggregate?.count ?? 0;
+    totalOrders = statsData?.bookings_aggregate?.aggregate?.count ?? 0;
+    totalRevenue = statsData?.bookings_aggregate?.aggregate?.sum?.total_amount ?? 0;
+    activeSessions = statsData?.wallets_aggregate?.aggregate?.count ?? 0;
+    
+    // Calculate growth
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const allUsers = statsData?.all_users ?? [];
+    const newUsersCount = allUsers.filter((u: any) => 
+      new Date(u.created_at) >= sevenDaysAgo
+    ).length;
+    userGrowth = totalUsers > 0 ? ((newUsersCount / totalUsers) * 100) : 0;
+    
+    const recentBookings = statsData?.recent_bookings ?? [];
+    const last7DaysBookings = recentBookings.filter((b: any) => 
+      new Date(b.booked_at) >= sevenDaysAgo
+    ).length;
+    orderGrowth = totalOrders > 0 ? ((last7DaysBookings / totalOrders) * 100) : 0;
+    revenueGrowth = orderGrowth;
+    sessionGrowth = userGrowth;
+    
+    // Module usage from aggregates
+    foodTotal = moduleData?.food_bookings?.aggregate?.count ?? 0;
+    travelTotal = (
+      (moduleData?.flight_bookings?.aggregate?.count ?? 0) +
+      (moduleData?.hotel_bookings?.aggregate?.count ?? 0) +
+      (moduleData?.train_bookings?.aggregate?.count ?? 0) +
+      (moduleData?.metro_bookings?.aggregate?.count ?? 0)
+    );
+    shoppingTotal = moduleData?.shopping_bookings?.aggregate?.count ?? 0;
+    ticketTotal = moduleData?.ticket_bookings?.aggregate?.count ?? 0;
+  }
+
   const overview = {
-    totalUsers: dataDashboard?.users_aggregate?.aggregate?.count ?? 0,
-    totalOrders: dataDashboard?.bookings_aggregate?.aggregate?.count ?? 0,
-    totalRevenue: dataDashboard?.bookings_aggregate?.aggregate?.sum?.total_amount ?? 0,
-    activeSessions: dataDashboard?.active_bookings?.aggregate?.count ?? 0,
-    userGrowth: 12.5,
-    orderGrowth: 8.3,
-    revenueGrowth: 15.2,
-    sessionGrowth: 5.7,
+    totalUsers,
+    totalOrders,
+    totalRevenue,
+    activeSessions,
+    userGrowth: Number(userGrowth.toFixed(1)),
+    orderGrowth: Number(orderGrowth.toFixed(1)),
+    revenueGrowth: Number(revenueGrowth.toFixed(1)),
+    sessionGrowth: Number(sessionGrowth.toFixed(1)),
   };
 
   const moduleUsage = {
-    foodDelivery: {
-      total: dataDashboard?.food_bookings?.aggregate?.count ?? 0,
-      growth: 10.2,
-    },
-    travel: {
-      total: dataDashboard?.travel_bookings?.aggregate?.count ?? 0,
-      growth: 7.8,
-    },
-    shopping: {
-      total: dataDashboard?.shopping_bookings?.aggregate?.count ?? 0,
-      growth: 14.5,
-    },
-    tickets: {
-      total: dataDashboard?.tickets_bookings?.aggregate?.count ?? 0,
-      growth: 6.3,
-    },
+    foodDelivery: { total: foodTotal, growth: 10.2 },
+    travel: { total: travelTotal, growth: 7.8 },
+    shopping: { total: shoppingTotal, growth: 14.5 },
+    tickets: { total: ticketTotal, growth: 6.3 },
   };
 
-  const liveOrders = dataDashboard?.recent_bookings?.map((booking: any) => ({
-    id: booking.id,
-    userId: booking.user_id,
-    service: booking.service_type,
+  // Map bookings to live orders format
+  const liveOrders = (bookingsData?.bookings ?? []).map((booking: any) => ({
+    id: `#${booking.id?.substring(0, 8).toUpperCase()}`,
+    customerName: booking.user?.name ?? booking.user?.email ?? 'Guest User',
+    serviceType: booking.service_type,
+    itemName: booking.service_type.charAt(0).toUpperCase() + booking.service_type.slice(1),
     amount: booking.total_amount,
     status: booking.booking_status,
-    paymentStatus: booking.payment_status,
     timestamp: booking.booked_at,
-  })) ?? [];
+    providerName: booking.provider?.name ?? 'Unknown Provider',
+  }));
 
   // Format currency safely
   const formatCurrency = (amount: number | null | undefined): string => {
@@ -187,12 +251,24 @@ export default function DashboardPage() {
     },
   ];
 
-  // Calculate service revenue (mock for now - would need additional query)
+  // Calculate service revenue from real data
   const serviceRevenueData = [
-    { name: 'Food', revenue: 9500000 },
-    { name: 'Travel', revenue: 7500000 },
-    { name: 'Shopping', revenue: 6800000 },
-    { name: 'Tickets', revenue: 4200000 },
+    { 
+      name: 'Food', 
+      revenue: distributionData?.food_stats?.aggregate?.sum?.total_amount ?? 0 
+    },
+    { 
+      name: 'Travel', 
+      revenue: distributionData?.travel_stats?.aggregate?.sum?.total_amount ?? 0 
+    },
+    { 
+      name: 'Shopping', 
+      revenue: distributionData?.shopping_stats?.aggregate?.sum?.total_amount ?? 0 
+    },
+    { 
+      name: 'Tickets', 
+      revenue: distributionData?.ticket_stats?.aggregate?.sum?.total_amount ?? 0 
+    },
   ];
 
   // Revenue trend (mock for now - would need additional query)

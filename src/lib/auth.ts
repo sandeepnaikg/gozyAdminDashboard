@@ -2,6 +2,7 @@
 
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
+const USER_CONTEXT_KEY = 'user_context';
 
 // ------------------------
 // Token Getters / Setters
@@ -47,7 +48,50 @@ export const clearTokens = (): void => {
   try {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_CONTEXT_KEY);
   } catch {}
+};
+
+// ------------------------
+// User Context (Vendor/User Info)
+// ------------------------
+
+export interface UserContext {
+  userId: string;
+  role: 'admin' | 'vendor' | 'user';
+  vendorId?: string; // Only for vendor role
+  providerId?: string; // Provider ID for vendors
+  email?: string;
+  name?: string;
+}
+
+export const getUserContext = (): UserContext | null => {
+  try {
+    const context = localStorage.getItem(USER_CONTEXT_KEY);
+    return context ? JSON.parse(context) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setUserContext = (context: UserContext | null): void => {
+  try {
+    if (context === null) {
+      localStorage.removeItem(USER_CONTEXT_KEY);
+    } else {
+      localStorage.setItem(USER_CONTEXT_KEY, JSON.stringify(context));
+    }
+  } catch {}
+};
+
+export const getVendorId = (): string | null => {
+  const context = getUserContext();
+  return context?.vendorId || context?.providerId || null;
+};
+
+export const getUserRole = (): string => {
+  const context = getUserContext();
+  return context?.role || 'user';
 };
 
 // ------------------------
@@ -83,4 +127,8 @@ export default {
   setRefreshToken,
   clearTokens,
   queueRefresh,
+  getUserContext,
+  setUserContext,
+  getVendorId,
+  getUserRole,
 };

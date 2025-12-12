@@ -27,7 +27,8 @@ const statusConfig: Record<string, { icon: any, color: string, bg: string }> = {
   cancelled: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10' },
 }
 
-const getStatusConfig = (status: string) => {
+const getStatusConfig = (status: string | undefined) => {
+  if (!status) return statusConfig.pending;
   return statusConfig[status.toLowerCase()] || statusConfig.pending;
 }
 
@@ -44,7 +45,8 @@ const moduleColors: Record<string, string> = {
   tickets: 'bg-pink-500/20 text-pink-500',
 }
 
-const getModuleColor = (serviceType: string) => {
+const getModuleColor = (serviceType: string | undefined) => {
+  if (!serviceType) return 'bg-gray-500/20 text-gray-500';
   return moduleColors[serviceType.toLowerCase()] || 'bg-gray-500/20 text-gray-500';
 }
 

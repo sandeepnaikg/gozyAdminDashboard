@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/components/layout/MainLayout'
+import { RbacProvider } from '@/hooks/useRbac'
 import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import UsersPage from '@/pages/UsersPage'
@@ -9,6 +10,7 @@ import TicketsPage from '@/pages/TicketsPage'
 import ShoppingPage from '@/pages/ShoppingPage'
 import RidersPage from '@/pages/RidersPage'
 import VendorsPage from '@/pages/VendorsPage'
+import VendorEmployeeManagementPage from '@/pages/VendorEmployeeManagementPage'
 import OperationsPage from '@/pages/OperationsPage'
 import FinancePage from '@/pages/FinancePage'
 import CMSPage from '@/pages/CMSPage'
@@ -27,10 +29,11 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Public Route */}
-        <Route path="/login" element={<LoginPage />} />
+    <RbacProvider>
+      <Router>
+        <Routes>
+          {/* Public Route */}
+          <Route path="/login" element={<LoginPage />} />
         
         {/* Protected Routes */}
         <Route path="/" element={
@@ -96,6 +99,13 @@ function App() {
             </MainLayout>
           </ProtectedRoute>
         } />
+        <Route path="/vendor/employees" element={
+          <ProtectedRoute>
+            <MainLayout>
+              <VendorEmployeeManagementPage />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
         <Route path="/operations" element={
           <ProtectedRoute>
             <MainLayout>
@@ -147,6 +157,7 @@ function App() {
         } />
       </Routes>
     </Router>
+    </RbacProvider>
   )
 }
 
